@@ -12,49 +12,42 @@
 
   df_panel = read_csv("data/panel_regrowth_Cerrado.csv")
     df_panel = subset(df_panel, drop_4balance==0)
+    coord = read_csv("data/coord_panelSR_Cerrado.csv") #separated file bc  we're holding the weights constant
+    coord = subset(coord, drop_4balance==0)
 
 ## 1. Initial data analysis ####
   # 1.1. Spatial weights matrix and neighbors, based on contiguity or distance
     # From coordinates in a dataframe
-    xy = SpatialPoints(df_panel[,14:13]) #from long to lat
-    nb = knn2nb(knearneigh(xy))
-    nbs <- make.sym.nb(nb) #symetric weights
-      plot(nb, xy)
-    
-    # From polygons (i.e., .shp), use 'poly2nb()'
-    
-    w = nb2listw(nb, style="W", zero.policy = T)
-    lws <- nb2listw(nbs) #symetric
+    xy = SpatialPoints(coord[,3:2]) #from long to lat
+    nbs = make.sym.nb(knn2nb(knearneigh(xy,k=6))) # symmetric weight matrix needed for panel
+      plot(nbs, xy)
+
+    lws <- nb2listw(nbs, zero.policy = T) # using symmetric weight matrix
   
   # 1.2. simple panel OLS and FE regression for reference
-    ols = plm(regrowth ~ lpw, data = df_panel, index = c("geocode", "year"), model="pooling")
+    ols = plm(regrowth_ha ~ lpw +embargos_def +veg_pers, data = df_panel, index = c("geocode", "year"), model="pooling")
       summary(ols)
-    
-    fe = plm(regrowth ~ lpw, data = df_panel, index = c("geocode", "year"), model="within")
-      summary(fe)
-  
-    # Lagrange multiplier test for spatial lag and spatial error dependencies
-    lm.LMtests(ols, w, test=c("LMlag", "LMerr")) #if not signif for spatial, dump it
-
-  # 1.3. Moran's I test
-    moran.test(df$lpw2016, w) #Consider to use 'zero.policy=T'
-    moran.plot(df$lpw2016, w)
-
-    #local = localmoran(x = df$lpw2016, listw = w) # Ii: local moran statistic; E.Ii: expectation of local moran statistic; Var.Ii: variance of local moran statistic; Z.Ii: standard deviate of local moran statistic
 
 # 2. Panel spatial regression (2001-2016) ####
-  #df_panel = pdata.frame(df_panel, index = c("geocode", "year"))
+# functions 'splm', 'spreml', and 'spgm'; the last run IV for panel (see the options method and instruments in the function)
+
+  # Fixed effect
+    sfe = spgm(regrowth_ha ~ lpw +embargos_def +veg_pers, data = df_panel, index = c("geocode", "year"),
+               listw = lws, model = "within", lag = FALSE, spatial.error = TRUE)
+      summary.splm(sfe)
   
   # Random effect
-    sre = spml(regrowth ~ lpw, data = df_panel, index = c("geocode", "year"),
-               listw = lws, model = "random", lag = FALSE, spatial.error = "b")
-      summary(sre)
+    sre = spreml(regrowth_ha ~ lpw +embargos_def +veg_pers, data = df_panel, index = c("geocode", "year"),
+                 w = lws, errors = "sem2re")
+      summary.splm(sre)
   
-  # Fixed effect
-    sfe <- spml(regrowth ~ lpw +embargos_def, data = df_panel, listw = w,
-              model="within", spatial.error="b", Hess = FALSE)
-      summary(sfe)
-  
-  # Marginal effect
-    impac1 <- impacts(sre, listw = w, time = 16)
+  # Marginal effect (demands a splm model)
+    impac1 <- impacts(sfe, listw = lws, time = 16)
       summary(impac1, zstats=TRUE, short=TRUE)
+      
+  # Hausman test
+    sphtest(regrowth_ha ~ lpw +embargos_def +veg_pers, data = df_panel,
+                   listw = lws, spatial.model="error")
+   
+    sphtest(sre, sfe) #compare the previous models (e.g., FE and RE)
+    

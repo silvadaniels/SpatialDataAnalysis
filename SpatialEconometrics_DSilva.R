@@ -13,7 +13,7 @@
 ## 1. Initial data analysis (cross-section 2001-2016) ####
   # 1.1. Spatial weights matrix and neighbors, based on contiguity or distance
     # From coordinates in a dataframe
-      xy = SpatialPoints(df[,15:14]) #from long to lat
+      xy = SpatialPoints(df[,19:18]) #from long to lat
       nb = knn2nb(knearneigh(xy, k=6))
         plot(nb, xy) #visualize to double check
     
